@@ -84,9 +84,10 @@ Validating repository: /path/to/repo
 Loading commit history ...
   142 commit(s) loaded.
 
-Scaling inter-commit intervals by factor 2.0 ...
-  Original span: 2024-01-03  ->  2025-11-20
-  New span:      2022-04-16  ->  2025-11-20
+Scaling last 20 commit(s) by factor 3.0 …
+  Original span: 2024-01-03  →  2025-11-20
+  New span:      2023-07-11  →  2025-11-20
+  122 commit(s) outside the window were time-shifted to preserve order.
 
 Rewriting history with git filter-branch ...
 Done. History rewritten successfully.
@@ -99,8 +100,13 @@ IMPORTANT: If this repo has been pushed, run:
 
 1. **Validate** - verifies that the path exists, contains `.git`, passes `git rev-parse`, has at least one commit, and passes `git fsck` object-store integrity check.
 2. **Load** - reads the full commit history from `HEAD` in oldest-first order, capturing hash, author, committer, timestamps, and subject.
-3. **Scale** - computes the gap between each consecutive pair of committer timestamps and multiplies it by `--factor`. The last commit is used as the anchor (clamped to <= now). If any resulting timestamp would fall before the Unix epoch, the entire series is shifted forward.
-4. **Rewrite** - generates a temporary `git filter-branch --env-filter` shell script that sets `GIT_AUTHOR_DATE` and `GIT_COMMITTER_DATE` for every commit, then removes the script after execution.
+3. **Select window** - by default the entire history is the window.  With `--last N` the window is the last N commits; with `--first N` it is the first N commits.
+4. **Scale** - within the window, computes the gap between each consecutive pair of committer timestamps and multiplies it by `--factor`.
+   - For the default / `--last N` mode the **last** commit in the window is the anchor (clamped to ≤ now); gaps expand backwards.
+   - For `--first N` mode the **first** commit in the window is the anchor; gaps expand forwards.
+   - If any resulting timestamp would fall before the Unix epoch, the entire series is shifted forward.
+5. **Shift neighbours** - if the scaled window's boundary commit has moved past an adjacent commit outside the window, all commits on that side are shifted by the same delta (their inter-commit gaps stay intact).
+6. **Rewrite** - generates a temporary `git filter-branch --env-filter` shell script that sets `GIT_AUTHOR_DATE` and `GIT_COMMITTER_DATE` for every affected commit, then removes the script after execution.
 
 > **Warning:** `git filter-branch` rewrites history. If the repository has already been pushed to a remote, you will need `git push --force` afterwards. Inform collaborators before doing this on a shared branch.
 
