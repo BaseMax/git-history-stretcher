@@ -9,7 +9,10 @@ A Python CLI tool to validate Git repositories and programmatically rewrite comm
 
 - Full repository validation before any modification
 - Scales inter-commit time gaps by a configurable factor
-- Anchors the last commit to its original timestamp never pushes it into the future
+- Anchors the last commit to its original timestamp — never pushes it into the future
+- **`--last N`** — restrict scaling to the last N commits; commits before the window are shifted earlier if needed to keep chronological order
+- **`--first N`** — restrict scaling to the first N commits; commits after the window are shifted later if needed to keep chronological order
+- Commits outside a window are never re-scaled — only time-shifted when necessary
 - Preserves the author/committer time offset for every commit
 - Dry-run mode to preview all changes safely
 - Zero third-party dependencies
@@ -31,7 +34,7 @@ No dependencies to install. The tool uses only the Python standard library.
 ## Usage
 
 ```bash
-python git_history_stretcher.py <repo> [--factor N] [--dry-run] [--validate-only]
+python git_history_stretcher.py <repo> [--factor N] [--last N] [--first N] [--dry-run] [--validate-only]
 ```
 
 ### Arguments
@@ -40,8 +43,12 @@ python git_history_stretcher.py <repo> [--factor N] [--dry-run] [--validate-only
 |---|---|---|
 | `repo` | *(required)* | Path to the target Git repository |
 | `--factor` | `2.0` | Scaling factor applied to every inter-commit gap |
+| `--last N` | off | Restrict scaling to the **last** N commits only |
+| `--first N` | off | Restrict scaling to the **first** N commits only |
 | `--dry-run` | off | Preview new timestamps without writing anything |
 | `--validate-only` | off | Only run repository health checks and exit |
+
+> `--last` and `--first` cannot be combined.
 
 ### Examples
 
@@ -49,11 +56,20 @@ python git_history_stretcher.py <repo> [--factor N] [--dry-run] [--validate-only
 # Double the gap between every commit
 python git_history_stretcher.py /path/to/repo --factor 2
 
-# Triple all gaps - preview only
+# Triple all gaps — preview only
 python git_history_stretcher.py /path/to/repo --factor 3 --dry-run
 
 # Compress history to half the original spacing
 python git_history_stretcher.py /path/to/repo --factor 0.5
+
+# Stretch only the last 10 commits (commits before them shift if needed)
+python git_history_stretcher.py /path/to/repo --factor 3 --last 10
+
+# Stretch only the first 5 commits (commits after them shift if needed)
+python git_history_stretcher.py /path/to/repo --factor 2 --first 5
+
+# Preview stretching the last 20 commits without writing anything
+python git_history_stretcher.py /path/to/repo --factor 2 --last 20 --dry-run
 
 # Only verify that the repository is healthy
 python git_history_stretcher.py /path/to/repo --validate-only
