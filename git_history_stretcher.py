@@ -145,7 +145,7 @@ def build_env_filter(commits: list[dict]) -> str:
         parts.append(
             f'[ "$GIT_COMMIT" = "{c["hash"]}" ] && '
             f'export GIT_AUTHOR_DATE="{ts_to_iso(c["author_ts"])}" '
-            f'GIT_COMMITTER_DATE="{ts_to_iso(c["committer_ts"])}"'
+            f'GIT_COMMITTER_DATE="{ts_to_iso(c["committer_ts"])}" || :'
         )
     return "\n".join(parts)
 

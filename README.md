@@ -9,7 +9,7 @@ A Python CLI tool to validate Git repositories and programmatically rewrite comm
 
 - Full repository validation before any modification
 - Scales inter-commit time gaps by a configurable factor
-- Anchors the last commit to its original timestamp � never pushes it into the future
+- Anchors the last commit to its original timestamp never pushes it into the future
 - Preserves the author/committer time offset for every commit
 - Dry-run mode to preview all changes safely
 - Zero third-party dependencies
@@ -49,7 +49,7 @@ python git_history_stretcher.py <repo> [--factor N] [--dry-run] [--validate-only
 # Double the gap between every commit
 python git_history_stretcher.py /path/to/repo --factor 2
 
-# Triple all gaps � preview only
+# Triple all gaps - preview only
 python git_history_stretcher.py /path/to/repo --factor 3 --dry-run
 
 # Compress history to half the original spacing
@@ -81,10 +81,10 @@ IMPORTANT: If this repo has been pushed, run:
 
 ## How it works
 
-1. **Validate** � verifies that the path exists, contains `.git`, passes `git rev-parse`, has at least one commit, and passes `git fsck` object-store integrity check.
-2. **Load** � reads the full commit history from `HEAD` in oldest-first order, capturing hash, author, committer, timestamps, and subject.
-3. **Scale** � computes the gap between each consecutive pair of committer timestamps and multiplies it by `--factor`. The last commit is used as the anchor (clamped to <= now). If any resulting timestamp would fall before the Unix epoch, the entire series is shifted forward.
-4. **Rewrite** � generates a temporary `git filter-branch --env-filter` shell script that sets `GIT_AUTHOR_DATE` and `GIT_COMMITTER_DATE` for every commit, then removes the script after execution.
+1. **Validate** - verifies that the path exists, contains `.git`, passes `git rev-parse`, has at least one commit, and passes `git fsck` object-store integrity check.
+2. **Load** - reads the full commit history from `HEAD` in oldest-first order, capturing hash, author, committer, timestamps, and subject.
+3. **Scale** - computes the gap between each consecutive pair of committer timestamps and multiplies it by `--factor`. The last commit is used as the anchor (clamped to <= now). If any resulting timestamp would fall before the Unix epoch, the entire series is shifted forward.
+4. **Rewrite** - generates a temporary `git filter-branch --env-filter` shell script that sets `GIT_AUTHOR_DATE` and `GIT_COMMITTER_DATE` for every commit, then removes the script after execution.
 
 > **Warning:** `git filter-branch` rewrites history. If the repository has already been pushed to a remote, you will need `git push --force` afterwards. Inform collaborators before doing this on a shared branch.
 
@@ -97,4 +97,4 @@ git-history-stretcher/
 
 ## License
 
-MIT License � Copyright � 2026 Seyyed Ali Mohammadiyeh (Max Base)
+MIT License - Copyright - 2026 Seyyed Ali Mohammadiyeh (Max Base)
