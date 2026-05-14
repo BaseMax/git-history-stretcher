@@ -150,9 +150,16 @@ def build_filter_script(commits: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def to_git_bash_path(path: Path) -> str:
+    posix = path.as_posix()
+    if len(posix) >= 2 and posix[1] == ':':
+        posix = '/' + posix[0].lower() + posix[2:]
+    return posix
+
+
 def run_filter_branch(repo: str, script_path: Path) -> None:
     result = run_git(
-        ["filter-branch", "-f", "--env-filter", str(script_path), "--", "--all"],
+        ["filter-branch", "-f", "--env-filter", to_git_bash_path(script_path), "--", "--all"],
         repo,
     )
     if result.returncode != 0:
