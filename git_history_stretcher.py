@@ -126,6 +126,99 @@ def scale_timestamps(commits: list[dict], factor: float) -> list[dict]:
     return apply_new_timestamps(commits, new_committer_ts)
 
 
+def compute_scaled_committer_timestamps_forward(commits: list[dict], factor: float) -> list[int]:
+    """Anchor at the FIRST commit; scale gaps forward (oldest-first order)."""
+    anchor = commits[0]["committer_ts"]
+    orig = [c["committer_ts"] for c in commits]
+    scaled_gaps = [max(0, int((orig[i + 1] - orig[i]) * factor)) for i in range(len(orig) - 1)]
+
+    new_ts = [0] * len(commits)
+    new_ts[0] = anchor
+    for i in range(1, len(commits)):
+        new_ts[i] = new_ts[i - 1] + scaled_gaps[i - 1]
+
+    return new_ts
+
+
+def shift_commits(commits: list[dict], delta: int) -> list[dict]:
+    """Shift every commit by delta seconds, preserving the author/committer offset."""
+    result = []
+    for c in commits:
+        nc = dict(c)
+        author_offset = c["author_ts"] - c["committer_ts"]
+        nc["committer_ts"] = c["committer_ts"] + delta
+        nc["author_ts"] = nc["committer_ts"] + author_offset
+        result.append(nc)
+    return result
+
+
+def scale_timestamps_last_n(all_commits: list[dict], n: int, factor: float) -> tuple[list[dict], int]:
+    """Scale only the last N commits (anchored at the last commit, gaps expand backwards).
+
+    If the scaled window's first commit moves earlier than the preceding commit,
+    all preceding commits are shifted backwards by the same delta so chronological
+    order is preserved.  Their inter-commit gaps are left untouched.
+
+    Returns (new_all_commits, shifted_count) where shifted_count is the number of
+    commits outside the window that were time-shifted.
+    """
+    if n >= len(all_commits):
+        return scale_timestamps(all_commits, factor), 0
+
+    window = all_commits[-n:]
+    rest = all_commits[:-n]
+
+    new_committer_ts = compute_scaled_committer_timestamps(window, factor)
+    new_window = apply_new_timestamps(window, new_committer_ts)
+
+    new_window_first_ts = new_window[0]["committer_ts"]
+    rest_last_ts = rest[-1]["committer_ts"]
+
+    if new_window_first_ts < rest_last_ts:
+        delta = new_window_first_ts - rest_last_ts  # negative → shift earlier
+        new_rest = shift_commits(rest, delta)
+        shifted = len(rest)
+    else:
+        new_rest = list(rest)
+        shifted = 0
+
+    return new_rest + new_window, shifted
+
+
+def scale_timestamps_first_n(all_commits: list[dict], n: int, factor: float) -> tuple[list[dict], int]:
+    """Scale only the first N commits (anchored at the first commit, gaps expand forwards).
+
+    If the scaled window's last commit moves later than the following commit,
+    all following commits are shifted forwards by the same delta so chronological
+    order is preserved.  Their inter-commit gaps are left untouched.
+
+    Returns (new_all_commits, shifted_count) where shifted_count is the number of
+    commits outside the window that were time-shifted.
+    """
+    if n >= len(all_commits):
+        new_committer_ts = compute_scaled_committer_timestamps_forward(all_commits, factor)
+        return apply_new_timestamps(all_commits, new_committer_ts), 0
+
+    window = all_commits[:n]
+    rest = all_commits[n:]
+
+    new_committer_ts = compute_scaled_committer_timestamps_forward(window, factor)
+    new_window = apply_new_timestamps(window, new_committer_ts)
+
+    new_window_last_ts = new_window[-1]["committer_ts"]
+    rest_first_ts = rest[0]["committer_ts"]
+
+    if new_window_last_ts > rest_first_ts:
+        delta = new_window_last_ts - rest_first_ts  # positive → shift later
+        new_rest = shift_commits(rest, delta)
+        shifted = len(rest)
+    else:
+        new_rest = list(rest)
+        shifted = 0
+
+    return new_window + new_rest, shifted
+
+
 def ts_to_iso(ts: int) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
@@ -178,12 +271,42 @@ def span_str(commits: list[dict], key: str) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Stretch or compress a Git commit timeline by scaling inter-commit intervals."
+        description=(
+            "Stretch or compress a Git commit timeline by scaling inter-commit intervals.\n\n"
+            "By default all commits are processed.  Use --last or --first to restrict\n"
+            "the scaling to a specific number of commits at the end or the beginning of\n"
+            "history.  Commits outside the selected window are never re-scaled; they are\n"
+            "only shifted in time when necessary to preserve chronological order."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("repo", help="Path to the Git repository.")
-    parser.add_argument("--factor", type=float, default=2.0, help="Scaling factor (default: 2.0).")
-    parser.add_argument("--dry-run", action="store_true", help="Preview changes without modifying the repo.")
-    parser.add_argument("--validate-only", action="store_true", help="Only validate the repository and exit.")
+    parser.add_argument(
+        "--factor", type=float, default=2.0,
+        help="Scaling factor applied to every inter-commit gap (default: 2.0).",
+    )
+    parser.add_argument(
+        "--last", type=int, default=None, metavar="N",
+        help=(
+            "Restrict scaling to the last N commits only.  "
+            "Commits before the window are shifted earlier if needed."
+        ),
+    )
+    parser.add_argument(
+        "--first", type=int, default=None, metavar="N",
+        help=(
+            "Restrict scaling to the first N commits only.  "
+            "Commits after the window are shifted later if needed."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Preview new timestamps without modifying the repository.",
+    )
+    parser.add_argument(
+        "--validate-only", action="store_true",
+        help="Only run repository health checks and exit.",
+    )
     return parser.parse_args()
 
 
@@ -192,6 +315,18 @@ def main() -> None:
 
     if args.factor <= 0:
         print("Error: --factor must be a positive number.", file=sys.stderr)
+        sys.exit(1)
+
+    if args.first is not None and args.last is not None:
+        print("Error: --first and --last cannot be used together.", file=sys.stderr)
+        sys.exit(1)
+
+    if args.first is not None and args.first < 1:
+        print("Error: --first must be a positive integer.", file=sys.stderr)
+        sys.exit(1)
+
+    if args.last is not None and args.last < 1:
+        print("Error: --last must be a positive integer.", file=sys.stderr)
         sys.exit(1)
 
     print(f"Validating repository: {args.repo}")
@@ -211,10 +346,23 @@ def main() -> None:
         print("Nothing to rewrite: fewer than 2 commits.")
         sys.exit(0)
 
-    print(f"\nScaling inter-commit intervals by factor {args.factor} …")
-    new_commits = scale_timestamps(commits, args.factor)
+    shifted = 0
+    if args.last is not None:
+        n = min(args.last, len(commits))
+        print(f"\nScaling last {n} commit(s) by factor {args.factor} …")
+        new_commits, shifted = scale_timestamps_last_n(commits, n, args.factor)
+    elif args.first is not None:
+        n = min(args.first, len(commits))
+        print(f"\nScaling first {n} commit(s) by factor {args.factor} …")
+        new_commits, shifted = scale_timestamps_first_n(commits, n, args.factor)
+    else:
+        print(f"\nScaling inter-commit intervals by factor {args.factor} …")
+        new_commits = scale_timestamps(commits, args.factor)
+
     print(f"  Original span: {span_str(commits, 'committer_ts')}")
     print(f"  New span:      {span_str(new_commits, 'committer_ts')}")
+    if shifted:
+        print(f"  {shifted} commit(s) outside the window were time-shifted to preserve order.")
 
     rewrite_history(args.repo, new_commits, dry_run=args.dry_run)
 
