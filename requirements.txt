@@ -1,0 +1,3 @@
+# No third-party dependencies required.
+# git-history-stretcher uses only the Python standard library.
+# Git must be installed and available on PATH.
