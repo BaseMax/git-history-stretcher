@@ -139,27 +139,20 @@ def print_dry_run(commits: list[dict]) -> None:
         )
 
 
-def build_filter_script(commits: list[dict]) -> str:
-    lines = ["#!/bin/sh"]
+def build_env_filter(commits: list[dict]) -> str:
+    parts = []
     for c in commits:
-        lines.append(
+        parts.append(
             f'[ "$GIT_COMMIT" = "{c["hash"]}" ] && '
             f'export GIT_AUTHOR_DATE="{ts_to_iso(c["author_ts"])}" '
             f'GIT_COMMITTER_DATE="{ts_to_iso(c["committer_ts"])}"'
         )
-    return "\n".join(lines) + "\n"
+    return "\n".join(parts)
 
 
-def to_git_bash_path(path: Path) -> str:
-    posix = path.as_posix()
-    if len(posix) >= 2 and posix[1] == ':':
-        posix = '/' + posix[0].lower() + posix[2:]
-    return posix
-
-
-def run_filter_branch(repo: str, script_path: Path) -> None:
+def run_filter_branch(repo: str, env_filter: str) -> None:
     result = run_git(
-        ["filter-branch", "-f", "--env-filter", to_git_bash_path(script_path), "--", "--all"],
+        ["filter-branch", "-f", "--env-filter", env_filter, "--", "--all"],
         repo,
     )
     if result.returncode != 0:
@@ -171,17 +164,10 @@ def rewrite_history(repo: str, commits: list[dict], dry_run: bool = False) -> No
         print_dry_run(commits)
         return
 
-    script_path = Path(repo) / ".git" / "_stretch_filter.sh"
-    script_path.write_text(build_filter_script(commits))
-    script_path.chmod(0o755)
-
-    try:
-        print("\nRewriting history with git filter-branch …")
-        run_filter_branch(repo, script_path)
-        print("Done. History rewritten successfully.")
-        print("\nIMPORTANT: If this repo has been pushed, run:\n  git push --force\n")
-    finally:
-        script_path.unlink(missing_ok=True)
+    print("\nRewriting history with git filter-branch …")
+    run_filter_branch(repo, build_env_filter(commits))
+    print("Done. History rewritten successfully.")
+    print("\nIMPORTANT: If this repo has been pushed, run:\n  git push --force\n")
 
 
 def span_str(commits: list[dict], key: str) -> str:
